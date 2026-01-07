@@ -165,13 +165,13 @@ public class Database {
 	 * Generate and print server report using SQL queries
 	 */
 	public void printReport() {
-		System.out.println("=".repeat(80));
+		System.out.println(repeat("=", 80));
 		System.out.println("SERVER REPORT - Generated at: " + java.time.LocalDateTime.now());
-		System.out.println("=".repeat(80));
+		System.out.println(repeat("=", 80));
 		
 		// List all users
 		System.out.println("\n1. REGISTERED USERS:");
-		System.out.println("-".repeat(80));
+		System.out.println(repeat("-", 80));
 		String usersSQL = "SELECT username, registration_date FROM users ORDER BY registration_date";
 		String usersResult = executeSQL(usersSQL);
 		if (usersResult.startsWith("SUCCESS")) {
@@ -187,7 +187,7 @@ public class Database {
 		
 		// Login history for each user
 		System.out.println("\n2. LOGIN HISTORY:");
-		System.out.println("-".repeat(80));
+		System.out.println(repeat("-", 80));
 		String loginSQL = "SELECT username, login_time, logout_time FROM login_history ORDER BY username, login_time DESC";
 		String loginResult = executeSQL(loginSQL);
 		if (loginResult.startsWith("SUCCESS")) {
@@ -212,7 +212,7 @@ public class Database {
 		
 		// File uploads for each user
 		System.out.println("\n3. FILE UPLOADS:");
-		System.out.println("-".repeat(80));
+		System.out.println(repeat("-", 80));
 		String filesSQL = "SELECT username, filename, upload_time, game_channel FROM file_tracking ORDER BY username, upload_time DESC";
 		String filesResult = executeSQL(filesSQL);
 		if (filesResult.startsWith("SUCCESS")) {
@@ -237,10 +237,17 @@ public class Database {
 			}
 		}
 		
-		System.out.println("=".repeat(80));
-	}
-
-	private static class Instance {
-		static Database instance = new Database();
-	}
+	System.out.println(repeat("=", 80));
 }
+
+private String repeat(String str, int times) {
+	StringBuilder sb = new StringBuilder();
+	for (int i = 0; i < times; i++) {
+		sb.append(str);
+	}
+	return sb.toString();
+}
+
+private static class Instance {
+	static Database instance = new Database();
+}}

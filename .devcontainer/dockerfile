@@ -13,7 +13,7 @@ RUN pip3 install matplotlib
 
 # maven 3.6.3
 RUN apt-get -y install wget
-RUN wget https://mirrors.estointernet.in/apache/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz
+RUN wget https://archive.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz
 RUN tar -xvf apache-maven-3.6.3-bin.tar.gz
 RUN mv apache-maven-3.6.3 /opt/
 RUN rm apache-maven-3.6.3-bin.tar.gz
