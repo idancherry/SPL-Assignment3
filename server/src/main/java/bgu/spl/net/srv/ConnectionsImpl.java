@@ -1,10 +1,12 @@
 package bgu.spl.net.srv;
 
+import java.util.HashMap;
+
 public class ConnectionsImpl<T> implements Connections<T> {
-    private final java.util.concurrent.ConcurrentHashMap<Integer, ConnectionHandler<T>> connections;
+    private final HashMap<Integer, ConnectionHandler<T>> connections;
 
     public ConnectionsImpl() {
-        connections = new java.util.concurrent.ConcurrentHashMap<>();
+        connections = new HashMap<>();
     }
 
     @Override
