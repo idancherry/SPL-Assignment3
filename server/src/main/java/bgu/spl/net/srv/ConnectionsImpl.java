@@ -1,12 +1,14 @@
 package bgu.spl.net.srv;
 
-import java.util.HashMap;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import bgu.spl.net.impl.data.Database;
 
 public class ConnectionsImpl<T> implements Connections<T> {
-    private final HashMap<Integer, ConnectionHandler<T>> connections;
+    private final ConcurrentHashMap<Integer, ConnectionHandler<T>> connections;
 
     public ConnectionsImpl() {
-        connections = new HashMap<>();
+        connections = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -21,13 +23,33 @@ public class ConnectionsImpl<T> implements Connections<T> {
 
     @Override
     public void send(String channel, T msg) {
-        // Implementation goes here
-        
+        Database db = Database.getInstance();
+        Set<Integer> subscribers = db.getChannelSubscribers(channel);
+        for (int connectionId : subscribers) {
+            send(connectionId, msg);
+        }        
     }
 
     @Override
     public void disconnect(int connectionId) {
-        connections.remove(connectionId);
+        Database db = Database.getInstance();
+        db.disconnect(connectionId);
+        ConnectionHandler<T> handler = connections.remove(connectionId);
+        if (handler != null) {
+            try{
+                handler.close();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    void addConnection(int connectionId, ConnectionHandler<T> handler) {
+        if (handler == null)
+            throw new IllegalArgumentException("ConnectionHandler cannot be null");
+        if (connections.containsKey(connectionId))
+            throw new IllegalArgumentException("Connection ID already exists");
+        connections.put(connectionId, handler);
     }
     
 }

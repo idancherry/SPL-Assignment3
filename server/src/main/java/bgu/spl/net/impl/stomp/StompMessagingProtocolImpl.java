@@ -1,7 +1,9 @@
 package bgu.spl.net.impl.stomp;
+import java.util.Set;
+
+import bgu.spl.net.api.StompMessagingProtocol;
 import bgu.spl.net.impl.data.Database;
 import bgu.spl.net.impl.data.LoginStatus;
-import bgu.spl.net.api.StompMessagingProtocol;
 import bgu.spl.net.srv.Connections;
 
 public class StompMessagingProtocolImpl implements StompMessagingProtocol<String> {
@@ -10,6 +12,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     private boolean shouldTerminate;
     final private String version= "1.2";
     final private String host = "stomp.cs.bgu.ac.il";
+    private boolean isConnected;
 
 
     @Override
@@ -17,40 +20,59 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         this.connectionId = connectionId;
         this.connections = connections;
         this.shouldTerminate = false;
+        this.isConnected = false;
     }
 
     @Override
     public void process(String message) {
-        String[] parts = message.split("\n\n");
-        if (parts.length < 2 ){
-            connections.send(connectionId, "ERROR\nmessage:Invalid message\n\n\u0000");
-            return;
-        }
-        String[] command_headers = parts[0].split("\n");
-        String command = command_headers[0];
-        String[] headers = new String[command_headers.length - 1];
-        System.arraycopy(command_headers, 1, headers, 0, headers.length);
-        String[] bodyAndNull = parts[1].split("\n");
-        String body; //should probably use the body variable later
-        boolean nullFound = false;
-
-        for (int i=0; i<bodyAndNull.length; i++) {
-            if (bodyAndNull[i].equals("\u0000")) {
-                nullFound = true;
-                String[] bodyArray = new String[i];
-                System.arraycopy(bodyAndNull, 0, bodyArray, 0, i);
-                body = String.join("\n", bodyArray);
+        String[] parts = message.split("\n");
+        String command = parts[0];
+        int headerEndIndex = 0;
+        boolean headerEndFound = false;
+        for (int i=1; i<parts.length; i++){
+            if (parts[i].isEmpty()){
+                headerEndIndex = i;
+                headerEndFound = true;
                 break;
             }
         }
-
-        if (!nullFound) {
-            connections.send(connectionId, "ERROR\nmessage:Missing null terminator\n\n\u0000");
+        if (!headerEndFound){
+            connections.send(connectionId, "ERROR\nmessage:Invalid frame format\n\n\u0000");
             return;
         }
+        String[] headers;
+        if (headerEndIndex>0){
+            headers = new String[headerEndIndex -1];
+            System.arraycopy(parts, 1, headers, 0, headerEndIndex -1);
+        }
+        else{
+            headers = new String[0];
+        }
+        
+        
+        String body="";
+        if (headerEndIndex +1 < parts.length){
+            StringBuilder bodyBuilder = new StringBuilder();
+            for (int i=headerEndIndex +1; i<parts.length; i++){
+                bodyBuilder.append(parts[i]);
+                if (i != parts.length -1){
+                    bodyBuilder.append("\n");
+                }
+            }
+            body = bodyBuilder.toString();
+        }
 
+        Database db =Database.getInstance();
         switch (command) {
             case "CONNECT":
+                if (isConnected) {
+                    connections.send(connectionId, "ERROR\nmessage:Client already connected\n\n\u0000");
+                    break;
+                }
+                if (body.length() != 0) {
+                    connections.send(connectionId, "ERROR\nmessage:CONNECT frame should not have a body\n\n\u0000");
+                    break;
+                }
                 if (headers.length < 4) {
                     connections.send(connectionId, "ERROR\nmessage:Invalid CONNECT frame\n\n\u0000");
                     break;
@@ -99,15 +121,30 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                 }
                 String username = headers[idx[2]].split(":")[1];
                 String passcode = headers[idx[3]].split(":")[1];
-                Database db = Database.getInstance();
                 LoginStatus loginStatus = db.login(connectionId, username, passcode);
-                if (loginStatus != LoginStatus.WRONG_PASSWORD) {
-                    connections.send(connectionId, "CONNECTED\nversion:"+version+"\n\n\u0000");
+                switch (loginStatus) {
+                    case CLIENT_ALREADY_CONNECTED:
+                        connections.send(connectionId, "ERROR\nmessage:Client already connected\n\n\u0000");
+                        break;
+                    case WRONG_PASSWORD:
+                        connections.send(connectionId, "ERROR\nmessage:Wrong password or username\n\n\u0000");
+                        break;
+                    case ALREADY_LOGGED_IN:
+                        connections.send(connectionId, "ERROR\nmessage:User already logged in\n\n\u0000");
+                        break;
+                    default:
+                        isConnected = true;
+                        connections.send(connectionId, "CONNECTED\nversion:"+version+"\n\n\u0000");
+                        break;
+                }
+                break;
+
+
+            case "DISCONNECT":
+                if (!isConnected) {
+                    connections.send(connectionId, "ERROR\nmessage:User not connected\n\n\u0000");
                     break;
                 }
-                connections.send(connectionId, "ERROR\nmessage:Invalid login or passcode\n\n\u0000");
-                break;
-            case "DISCONNECT":
                 boolean receiptFound = false;
                 for (String header : headers) {
                     if (header.startsWith("receipt:")) {
@@ -121,11 +158,16 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     connections.send(connectionId, "ERROR\nmessage:Missing receipt header\n\n\u0000");
                     break;
                 }
-                Database.getInstance().logout(connectionId);
+                db.logout(connectionId);
                 shouldTerminate = true;
+                isConnected = false;
                 break;
 
             case "SUBSCRIBE":
+                if (!isConnected) {
+                    connections.send(connectionId, "ERROR\nmessage:User not connected\n\n\u0000");
+                    break;
+                }
                 boolean idFound = false;
                 boolean destinationFound = false;
                 String subscriptionId = "";
@@ -152,11 +194,15 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     break;
                 }
 
-                //might need to add db subscription
+                db.subscribe(connectionId, destination, subscriptionId);
                 connections.send(connectionId, "RECEIPT\nreceipt-id:sub-"+subscriptionId+"\ndestination:"+destination+"\n\n\u0000");
                 break;
 
             case "UNSUBSCRIBE":
+                if (!isConnected) {
+                    connections.send(connectionId, "ERROR\nmessage:User not connected\n\n\u0000");
+                    break;
+                }
                 boolean unsubFound = false;
                 String unsubId = "";
                 for (String header : headers) {
@@ -170,11 +216,15 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     connections.send(connectionId, "ERROR\nmessage:Missing id header\n\n\u0000");
                     break;
                 }
-                //might need to add db unsubscription
+                db.unsubscribe(connectionId, unsubId);
                 connections.send(connectionId, "RECEIPT\nreceipt-id:unsub-"+unsubId+"\n\n\u0000");
                 break;
             
             case "SEND":
+                if (!isConnected) {
+                    connections.send(connectionId, "ERROR\nmessage:User not connected\n\n\u0000");
+                    break;
+                }
                 boolean destFound = false;
                 String dest = "";
                 for (String header : headers) {
@@ -189,7 +239,16 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     break;
                 }
                 //might need to add db send message to subscribers
-                connections.send(connectionId, "RECEIPT\nreceipt-id:send-"+dest+"\n\n\u0000");
+                Set<Integer> subscribers = db.getChannelSubscribers(dest);
+                for (int subConnectionId : subscribers) {
+                    String subId = db.getSubscription(subConnectionId, dest);
+                    if (subId == null) {
+                        continue;
+                    }
+                    String msgToSend = "MESSAGE\nsubscription:"+subId+"\nmessage-id:"+db.getNextMessageId()+
+                                      "\ndestination:"+dest+"\n\n"+body+"\u0000";
+                    connections.send(subConnectionId, msgToSend);
+                }
                 break;
             default:
                 connections.send(connectionId, "ERROR\nmessage:Unknown command\n\n\u0000");
