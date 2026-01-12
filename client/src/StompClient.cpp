@@ -22,16 +22,34 @@ int main(int argc, char *argv[]) {
 	
 	const short bufsize = 1024;
 	char buf[bufsize];
-
+	std::string command;
 	std::cin.getline(buf, bufsize);
-	
+
 	std::string line(buf);
-	int len=line.length();
-	std::cout << "Sent " << len+1 << " bytes to server" << std::endl;
 	if (!connectionHandler.sendFrameAscii(line, '\0')) 
 		std::cout << "Disconnected. Exiting...\n" << std::endl;
-		
 
+
+	// user input and sending thread	
+	std::thread socketThred([&connectionHandler](){
+
+		while (1) {
+			
+			std::string command;
+			std::cin.getline(buf, bufsize);
+
+			std::string line(buf);
+			
+			int len=line.length();
+			if (!connectionHandler.getFrameAscii(answer, '\0')) {
+				std::cout << "Disconnected. Exiting...\n" << std::endl;
+				break;
+			}
+		}
+		
+    });	
+		
+	// receiving thread
 	std::thread socketThred([&connectionHandler](){
 
 		while (1) {
