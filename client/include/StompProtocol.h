@@ -12,10 +12,8 @@ private:
     int _subIdCounter;
     int _receiptIdCounter;
 
-    // מפה אחת מספיקה: ID -> Genre Name
     std::unordered_map<int, std::string> _subscriptions;
 
-    // מפה לניהול כל ה-Receipts (כולל דיסקונקט, ג'וין, וכו')
     std::map<int, std::string> _receiptToActions;
 
     void handleConnected(const StompFrame& frame);

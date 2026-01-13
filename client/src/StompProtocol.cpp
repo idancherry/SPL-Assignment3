@@ -10,6 +10,11 @@ StompProtocol::StompProtocol() :
     _subIdCounter(0),             
     _receiptIdCounter(0) {}
 
+bool StompProtocol::shouldTerminate(){
+    return _shouldTerminate;
+}
+
+
 // --- Keyboard Input ---
 string StompProtocol::processKeyboardInput(string message) {
     stringstream ss(message);
@@ -55,16 +60,16 @@ void StompProtocol::handleReceipt(const StompFrame& frame) {
     if (_receiptToActions.count(rId)) {
         string action = _receiptToActions[rId];
         
-        // אם הפעולה היא ניתוק - סוגרים את התוכנית
+        
         if (action == "DISCONNECT") {
             _shouldTerminate = true;
             cout << "Disconnected successfully." << endl;
         } 
         else {
-            cout << action << endl; // למשל: "Joined genre sci-fi"
+            cout << action << endl; 
         }
         
-        _receiptToActions.erase(rId); // ניקוי ה-Receipt שבוצע
+        _receiptToActions.erase(rId); 
     }
 }
 
@@ -134,7 +139,7 @@ string StompProtocol::createUnsubscribeFrame(stringstream& ss) {
     frame.addHeader("id", to_string(subId));
     frame.addHeader("receipt", to_string(rId));
 
-    _subscriptions.erase(subId); // אפשר למחוק כבר כאן או ב-Receipt
+    _subscriptions.erase(subId); 
     return frame.toString();
 }
 
