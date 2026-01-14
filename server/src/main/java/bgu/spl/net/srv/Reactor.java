@@ -10,7 +10,9 @@ import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
+import bgu.spl.net.api.StompMessagingProtocol;
 
 public class Reactor<T> implements Server<T> {
 
@@ -22,6 +24,10 @@ public class Reactor<T> implements Server<T> {
 
     private Thread selectorThread;
     private final ConcurrentLinkedQueue<Runnable> selectorTasks = new ConcurrentLinkedQueue<>();
+
+    private final ConnectionsImpl<T> connections = new ConnectionsImpl<>();
+    private final AtomicInteger nextConnectionId = new AtomicInteger(1);
+
 
     public Reactor(
             int numThreads,
@@ -95,12 +101,23 @@ public class Reactor<T> implements Server<T> {
     private void handleAccept(ServerSocketChannel serverChan, Selector selector) throws IOException {
         SocketChannel clientChan = serverChan.accept();
         clientChan.configureBlocking(false);
+        int connectionId = nextConnectionId.getAndIncrement();
+        MessagingProtocol<T> protocol = protocolFactory.get();
+
         final NonBlockingConnectionHandler<T> handler = new NonBlockingConnectionHandler<>(
                 readerFactory.get(),
-                protocolFactory.get(),
+                protocol,
                 clientChan,
-                this);
+                this,
+                connectionId,
+                connections);
         clientChan.register(selector, SelectionKey.OP_READ, handler);
+        connections.addConnection(connectionId, handler);
+        
+        @SuppressWarnings("unchecked")
+        StompMessagingProtocol<T> stompProtocol = (StompMessagingProtocol<T>) protocol;
+        stompProtocol.start(connectionId, connections);
+        
     }
 
     private void handleReadWrite(SelectionKey key) {

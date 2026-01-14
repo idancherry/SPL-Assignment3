@@ -20,16 +20,30 @@ public class NonBlockingConnectionHandler<T> implements ConnectionHandler<T> {
     private final Queue<ByteBuffer> writeQueue = new ConcurrentLinkedQueue<>();
     private final SocketChannel chan;
     private final Reactor reactor;
+    private final int connectionId;
+    private final Connections<T> connections;
 
     public NonBlockingConnectionHandler(
             MessageEncoderDecoder<T> reader,
             MessagingProtocol<T> protocol,
             SocketChannel chan,
             Reactor reactor) {
+        this(reader, protocol, chan, reactor, -1, null);
+    }
+
+    public NonBlockingConnectionHandler(
+            MessageEncoderDecoder<T> reader,
+            MessagingProtocol<T> protocol,
+            SocketChannel chan,
+            Reactor reactor,
+            int connectionId,
+            Connections<T> connections) {
         this.chan = chan;
         this.encdec = reader;
         this.protocol = protocol;
         this.reactor = reactor;
+        this.connectionId = connectionId;
+        this.connections = connections;
     }
 
     public Runnable continueRead() {
@@ -70,6 +84,9 @@ public class NonBlockingConnectionHandler<T> implements ConnectionHandler<T> {
 
     public void close() {
         try {
+            if (connections != null) {
+            connections.disconnect(connectionId);
+            }
             chan.close();
         } catch (IOException ex) {
             ex.printStackTrace();

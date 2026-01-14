@@ -13,6 +13,8 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     final private String version= "1.2";
     final private String host = "stomp.cs.bgu.ac.il";
     private boolean isConnected;
+    private boolean started = false;
+
 
 
     @Override
@@ -21,10 +23,18 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         this.connections = connections;
         this.shouldTerminate = false;
         this.isConnected = false;
+        this.started = true;
     }
 
     @Override
     public void process(String message) {
+        if (!started) {
+            sendError("Protocol not initialized");
+            connections.disconnect(connectionId);
+            shouldTerminate = true;
+            return;
+        }
+
         String[] parts = message.split("\n");
         String command = parts[0];
         int headerEndIndex = 0;
@@ -37,7 +47,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             }
         }
         if (!headerEndFound){
-            connections.send(connectionId, "ERROR\nmessage:Invalid frame format\n\n\u0000");
+            sendError("Invalid frame format");
             return;
         }
         String[] headers;
@@ -66,15 +76,15 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         switch (command) {
             case "CONNECT":
                 if (isConnected) {
-                    connections.send(connectionId, "ERROR\nmessage:Client already connected\n\n\u0000");
+                    sendError("Client already connected");
                     break;
                 }
                 if (body.length() != 0) {
-                    connections.send(connectionId, "ERROR\nmessage:CONNECT frame should not have a body\n\n\u0000");
+                    sendError("CONNECT frame should not have a body");
                     break;
                 }
                 if (headers.length < 4) {
-                    connections.send(connectionId, "ERROR\nmessage:Invalid CONNECT frame\n\n\u0000");
+                    sendError("Invalid CONNECT frame");
                     break;
                 }
                 boolean[] validated = new boolean[4];
@@ -83,7 +93,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     switch (headers[i].split(":")[0]){
                         case "accept-version":
                             if (validated[0]){
-                                connections.send(connectionId, "ERROR\nmessage:Multiple accept-version headers\n\n\u0000");
+                                sendError("Multiple accept-version headers");
                                 return;
                             }
                             validated[0] = headers[i].equals("accept-version:"+version);
@@ -91,7 +101,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                             break;
                         case "host":
                             if (validated[1]){
-                                connections.send(connectionId, "ERROR\nmessage:Multiple host headers\n\n\u0000");
+                                sendError("Multiple host headers");
                                 return;
                             }
                             validated[1] = headers[i].equals("host:"+host);
@@ -99,7 +109,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                             break;
                         case "login":
                             if (validated[2]){
-                                connections.send(connectionId, "ERROR\nmessage:Multiple login headers\n\n\u0000");
+                                sendError("Multiple login headers");
                                 return;
                             }
                             validated[2] = headers[i].startsWith("login:");
@@ -107,7 +117,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                             break;
                         case "passcode":
                             if (validated[3]){
-                                connections.send(connectionId, "ERROR\nmessage:Multiple passcode headers\n\n\u0000");
+                                sendError("Multiple passcode headers");
                                 return;
                             }
                             validated[3] = headers[i].startsWith("passcode:");
@@ -116,7 +126,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     }                        
                 }
                 if (!(validated[0] && validated[1] && validated[2] && validated[3])) {
-                    connections.send(connectionId, "ERROR\nmessage:Invalid CONNECT frame\n\n\u0000");
+                    sendError("Invalid CONNECT frame");
                     break;
                 }
                 String username = headers[idx[2]].split(":")[1];
@@ -124,13 +134,13 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                 LoginStatus loginStatus = db.login(connectionId, username, passcode);
                 switch (loginStatus) {
                     case CLIENT_ALREADY_CONNECTED:
-                        connections.send(connectionId, "ERROR\nmessage:Client already connected\n\n\u0000");
+                        sendError("Client already connected");
                         break;
                     case WRONG_PASSWORD:
-                        connections.send(connectionId, "ERROR\nmessage:Wrong password or username\n\n\u0000");
+                        sendError("Wrong username or password");
                         break;
                     case ALREADY_LOGGED_IN:
-                        connections.send(connectionId, "ERROR\nmessage:User already logged in\n\n\u0000");
+                        sendError("User already logged in");
                         break;
                     default:
                         isConnected = true;
@@ -142,7 +152,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
 
             case "DISCONNECT":
                 if (!isConnected) {
-                    connections.send(connectionId, "ERROR\nmessage:User not connected\n\n\u0000");
+                    sendError("User not connected");
                     break;
                 }
                 boolean receiptFound = false;
@@ -155,7 +165,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     }
                 }
                 if (!receiptFound) {
-                    connections.send(connectionId, "ERROR\nmessage:Missing receipt header\n\n\u0000");
+                    sendError("Missing receipt header");
                     break;
                 }
                 db.logout(connectionId);
@@ -165,7 +175,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
 
             case "SUBSCRIBE":
                 if (!isConnected) {
-                    connections.send(connectionId, "ERROR\nmessage:User not connected\n\n\u0000");
+                    sendError("User not connected");
                     break;
                 }
                 boolean idFound = false;
@@ -175,14 +185,14 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                 for (String header : headers) {
                     if (header.startsWith("id:")) {
                         if (idFound) {
-                            connections.send(connectionId, "ERROR\nmessage:Multiple id headers\n\n\u0000");
+                            sendError("Multiple id headers");
                             return;
                         }
                         idFound = true;
                         subscriptionId = header.split(":")[1];
                     } else if (header.startsWith("destination:")) {
                         if (destinationFound) {
-                            connections.send(connectionId, "ERROR\nmessage:Multiple destination headers\n\n\u0000");
+                            sendError("Multiple destination headers");
                             return;
                         }
                         destinationFound = true;
@@ -190,7 +200,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     }
                 }
                 if (!(idFound && destinationFound)) {
-                    connections.send(connectionId, "ERROR\nmessage:Missing id or destination header\n\n\u0000");
+                    sendError("Missing id or destination header");
                     break;
                 }
 
@@ -200,7 +210,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
 
             case "UNSUBSCRIBE":
                 if (!isConnected) {
-                    connections.send(connectionId, "ERROR\nmessage:User not connected\n\n\u0000");
+                    sendError("User not connected");
                     break;
                 }
                 boolean unsubFound = false;
@@ -213,7 +223,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     }
                 }
                 if (!unsubFound) {
-                    connections.send(connectionId, "ERROR\nmessage:Missing id header\n\n\u0000");
+                    sendError("Missing id header");
                     break;
                 }
                 db.unsubscribe(connectionId, unsubId);
@@ -222,7 +232,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
             
             case "SEND":
                 if (!isConnected) {
-                    connections.send(connectionId, "ERROR\nmessage:User not connected\n\n\u0000");
+                    sendError("User not connected");
                     break;
                 }
                 boolean destFound = false;
@@ -235,10 +245,9 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     }
                 }
                 if (!destFound) {
-                    connections.send(connectionId, "ERROR\nmessage:Missing destination header\n\n\u0000");
+                    sendError("Missing destination header");
                     break;
                 }
-                //might need to add db send message to subscribers
                 Set<Integer> subscribers = db.getChannelSubscribers(dest);
                 for (int subConnectionId : subscribers) {
                     String subId = db.getSubscription(subConnectionId, dest);
@@ -251,7 +260,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                 }
                 break;
             default:
-                connections.send(connectionId, "ERROR\nmessage:Unknown command\n\n\u0000");
+                sendError("Unknown command");
                 break;
         }
     }
@@ -259,5 +268,10 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     @Override
     public boolean shouldTerminate() {
         return shouldTerminate;
+    }
+
+    private void sendError(String msg) {
+    String frame = "ERROR\nmessage:" + msg + "\n\n\u0000";
+    connections.send(connectionId, frame);
     }
 }
