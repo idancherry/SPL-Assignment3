@@ -4,17 +4,29 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+
 
 public class Database {
 	private final ConcurrentHashMap<String, User> userMap;
 	private final ConcurrentHashMap<Integer, User> connectionsIdMap;
 	private final String sqlHost;
 	private final int sqlPort;
+	private int nextMessageId = 1;
+
+	// Map of channel to set of subscribed connectionIds
+	private final ConcurrentHashMap<String, Set<Integer>> channelSubscribers;
+
+	// Map of connectionId to (subscriptionId to channel)
+	private final ConcurrentHashMap<Integer, Map<String, String>> clientSubscriptions;
 
 	private Database() {
 		userMap = new ConcurrentHashMap<>();
 		connectionsIdMap = new ConcurrentHashMap<>();
+		channelSubscribers = new ConcurrentHashMap<>();
+		clientSubscriptions = new ConcurrentHashMap<>();
 		// SQL server connection details
 		this.sqlHost = "127.0.0.1";
 		this.sqlPort = 7778;
@@ -51,6 +63,73 @@ public class Database {
 			System.err.println("SQL Error: " + e.getMessage());
 			return "ERROR:" + e.getMessage();
 		}
+	}
+
+	public void addChannel(String channel) {
+		channelSubscribers.putIfAbsent(channel, ConcurrentHashMap.newKeySet());
+	}
+
+	public void subscribe(int connectionId, String channel, String subscriptionId) {
+		channelSubscribers.putIfAbsent(channel, ConcurrentHashMap.newKeySet());
+		channelSubscribers.get(channel).add(connectionId);
+		
+		clientSubscriptions.putIfAbsent(connectionId, new ConcurrentHashMap<>());
+		clientSubscriptions.get(connectionId).put(subscriptionId, channel);
+	}
+
+	public void unsubscribe(int connectionId, String subscriptionId) {
+		Map<String, String> subscriptions = clientSubscriptions.get(connectionId);
+		if (subscriptions == null) {
+			return;
+		}
+		String channel = subscriptions.get(subscriptionId);
+		if (channel != null) {
+			if (channelSubscribers.containsKey(channel)) {
+				channelSubscribers.get(channel).remove(connectionId);
+			}
+			if (clientSubscriptions.containsKey(connectionId)) {
+				clientSubscriptions.get(connectionId).remove(subscriptionId);
+			}
+			if (channelSubscribers.get(channel).isEmpty()) {
+				channelSubscribers.remove(channel);
+			}
+		}
+	}
+
+	public Set<Integer> getChannelSubscribers(String channel) {
+		Set<Integer> subscribers = channelSubscribers.getOrDefault(channel, ConcurrentHashMap.newKeySet());
+		return subscribers.stream().collect(java.util.stream.Collectors.toSet());
+	}
+
+	public void disconnect(int connectionsId){
+		Map<String, String> subscriptions = clientSubscriptions.get(connectionsId);
+		if (subscriptions != null) {
+			Set<String> subscriptionIds = subscriptions.keySet().stream().collect(java.util.stream.Collectors.toSet());
+			for (String subscriptionId : subscriptionIds) {
+				unsubscribe(connectionsId, subscriptionId);
+			}
+		}
+		clientSubscriptions.remove(connectionsId);
+	}
+
+	public boolean isUserConnected(int connectionId) {
+		return connectionsIdMap.containsKey(connectionId);
+	}
+
+	public int getNextMessageId() {
+		return nextMessageId++;
+	}
+
+	public String getSubscription(int connectionId, String dest){
+		Map<String, String> subscriptions = clientSubscriptions.get(connectionId);
+		if (subscriptions != null) {
+			for (Map.Entry<String, String> entry : subscriptions.entrySet()) {
+				if (entry.getValue().equals(dest)) {
+					return entry.getKey();
+				}
+			}
+		}
+		return null;
 	}
 
 	/**
