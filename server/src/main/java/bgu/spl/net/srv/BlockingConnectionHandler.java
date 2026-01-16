@@ -61,9 +61,6 @@ public class BlockingConnectionHandler<T> implements Runnable, ConnectionHandler
     @Override
     public void close() throws IOException {
         connected = false;
-        if (connections != null) {
-        connections.disconnect(connectionId);
-        }
         sock.close();
     }
 

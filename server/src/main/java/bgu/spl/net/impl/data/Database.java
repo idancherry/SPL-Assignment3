@@ -132,6 +132,14 @@ public class Database {
 		return null;
 	}
 
+	public boolean isSubscribed(int connectionId, String dest) {
+		Map<String, String> subscriptions = clientSubscriptions.get(connectionId);
+		if (subscriptions != null) {
+			return subscriptions.containsValue(dest);
+		}
+		return false;
+	}
+
 	/**
 	 * Escape SQL special characters to prevent SQL injection
 	 */
