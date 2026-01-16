@@ -14,8 +14,11 @@ public interface ConnectionHandler<T> extends Closeable {
 
     /**
      * Comment the following lines (both send methods) for the existing implentations to work.
-     *
+     *sends msg T to the client. Should be used by the send commands in
+     *the Connections implementation
      */
+
+
 
     void send(T msg);
 
