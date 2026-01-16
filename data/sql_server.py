@@ -9,12 +9,16 @@ the methods below.
 """
 
 import socket
+import sqlite3
 import sys
 import threading
+from urllib import response
 
 
 SERVER_NAME = "STOMP_PYTHON_SQL_SERVER"  # DO NOT CHANGE!
 DB_FILE = "stomp_server.db"              # DO NOT CHANGE!
+
+db=None
 
 
 def recv_null_terminated(sock: socket.socket) -> str:
@@ -30,15 +34,73 @@ def recv_null_terminated(sock: socket.socket) -> str:
 
 
 def init_database():
-    pass
+    global db
+    db = sqlite3.connect(DB_FILE, check_same_thread=False)
+    create_tables()
+    
 
-
+# used for INSERT, UPDATE, DELETE, CREATE
 def execute_sql_command(sql_command: str) -> str:
-    return "done"
+    try:
+        cur = db.cursor()
+        cur.execute(sql_command)
+        db.commit()
+        cur.close()
+        return "OK"
+    except Exception as e:
+        return f"ERROR:{e}"
 
-
+# used for SELECT
 def execute_sql_query(sql_query: str) -> str:
-    return "done"
+    try:
+        cur = db.cursor()
+        cur.execute(sql_query)
+        rows = cur.fetchall()
+        if not rows:
+            cur.close()
+            return "SUCCESS"
+        result = "SUCCESS"
+        for row in rows:
+            result += "|" + str(row)
+
+        cur.close()
+        return result
+    except Exception as e:
+        return f"ERROR:{e}"
+
+def create_tables():
+    cur = db.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password TEXT NOT NULL,
+            registration_date TEXT NOT NULL
+        """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS login_history(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT,
+                login_time TEXT,
+                logout_time TEXT
+        """)
+    
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS file_tracking (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            filename TEXT,
+            upload_time TEXT,
+            game_channel TEXT
+            )
+        """)
+    
+    db.commit()
+    cur.close()
+
+    
+
 
 
 def handle_client(client_socket: socket.socket, addr):
@@ -53,7 +115,13 @@ def handle_client(client_socket: socket.socket, addr):
             print(f"[{SERVER_NAME}] Received:")
             print(message)
 
-            client_socket.sendall(b"done\0")
+            upper = message.strip().upper()
+            if upper.startswith("SELECT"):
+                response = execute_sql_query(message)
+            else:
+                response = execute_sql_command(message)
+
+            client_socket.sendall((response + "\0").encode("utf-8"))
 
     except Exception as e:
         print(f"[{SERVER_NAME}] Error handling client {addr}: {e}")
@@ -66,6 +134,7 @@ def handle_client(client_socket: socket.socket, addr):
 
 
 def start_server(host="127.0.0.1", port=7778):
+    init_database()
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 

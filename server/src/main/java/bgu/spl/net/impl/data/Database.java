@@ -10,11 +10,13 @@ import java.util.concurrent.ConcurrentHashMap;
 
 
 public class Database {
-	private final ConcurrentHashMap<String, User> userMap;
-	private final ConcurrentHashMap<Integer, User> connectionsIdMap;
 	private final String sqlHost;
 	private final int sqlPort;
-	private int nextMessageId = 1;
+	private final java.util.concurrent.atomic.AtomicInteger nextMessageId =
+        new java.util.concurrent.atomic.AtomicInteger(1);
+	
+	private final ConcurrentHashMap<Integer, String> activeUsers = new ConcurrentHashMap<>();
+
 
 	// Map of channel to set of subscribed connectionIds
 	private final ConcurrentHashMap<String, Set<Integer>> channelSubscribers;
@@ -23,8 +25,6 @@ public class Database {
 	private final ConcurrentHashMap<Integer, Map<String, String>> clientSubscriptions;
 
 	private Database() {
-		userMap = new ConcurrentHashMap<>();
-		connectionsIdMap = new ConcurrentHashMap<>();
 		channelSubscribers = new ConcurrentHashMap<>();
 		clientSubscriptions = new ConcurrentHashMap<>();
 		// SQL server connection details
@@ -113,11 +113,11 @@ public class Database {
 	}
 
 	public boolean isUserConnected(int connectionId) {
-		return connectionsIdMap.containsKey(connectionId);
+		return activeUsers.containsKey(connectionId);
 	}
 
 	public int getNextMessageId() {
-		return nextMessageId++;
+		return nextMessageId.getAndIncrement();
 	}
 
 	public String getSubscription(int connectionId, String dest){
@@ -148,89 +148,69 @@ public class Database {
 		return str.replace("'", "''");
 	}
 
-	public void addUser(User user) {
-		userMap.putIfAbsent(user.name, user);
-		connectionsIdMap.putIfAbsent(user.getConnectionId(), user);
-	}
-
 	public LoginStatus login(int connectionId, String username, String password) {
-		if (connectionsIdMap.containsKey(connectionId)) {
-			return LoginStatus.CLIENT_ALREADY_CONNECTED;
+		if (activeUsers.containsKey(connectionId)) {
+        	return LoginStatus.CLIENT_ALREADY_CONNECTED;
+    	}
+		String checkSql = String.format(
+        "SELECT password FROM users WHERE username='%s'",
+        escapeSql(username)
+    	);
+		String result = executeSQL(checkSql);
+
+		if (result.startsWith("ERROR")) {
+			return LoginStatus.WRONG_PASSWORD;
 		}
-		if (addNewUserCase(connectionId, username, password)) {
-			// Log new user registration in SQL
-			String sql = String.format(
-				"INSERT INTO users (username, password, registration_date) VALUES ('%s', '%s', datetime('now'))",
+
+		boolean userExists = result.startsWith("SUCCESS|");
+		
+		if (!userExists) {
+			String insertUser = String.format(
+				"INSERT INTO users (username, password, registration_date) VALUES ('%s','%s',datetime('now'))",
 				escapeSql(username), escapeSql(password)
 			);
-			executeSQL(sql);
-			
-			// Log login
-			logLogin(username);
-			return LoginStatus.ADDED_NEW_USER;
+			executeSQL(insertUser);
 		} else {
-			LoginStatus status = userExistsCase(connectionId, username, password);
-			if (status == LoginStatus.LOGGED_IN_SUCCESSFULLY) {
-				// Log successful login in SQL
-				logLogin(username);
-			}
-			return status;
-		}
-	}
+			String storedPassword = result.split("\\|")[1]
+										.replace("(", "")
+										.replace(")", "")
+										.replace("'", "")
+										.split(",")[0];
 
-	private void logLogin(String username) {
-		String sql = String.format(
+			if (!storedPassword.equals(password)) {
+				return LoginStatus.WRONG_PASSWORD;
+			}
+		}
+
+		if (activeUsers.containsValue(username)) {
+			return LoginStatus.ALREADY_LOGGED_IN;
+		}
+
+		String logLogin = String.format(
 			"INSERT INTO login_history (username, login_time) VALUES ('%s', datetime('now'))",
 			escapeSql(username)
 		);
-		executeSQL(sql);
+		executeSQL(logLogin);
+		activeUsers.put(connectionId, username);
+
+		return userExists
+			? LoginStatus.LOGGED_IN_SUCCESSFULLY
+			: LoginStatus.ADDED_NEW_USER;
 	}
 
-	private LoginStatus userExistsCase(int connectionId, String username, String password) {
-		User user = userMap.get(username);
-		synchronized (user) {
-			if (user.isLoggedIn()) {
-				return LoginStatus.ALREADY_LOGGED_IN;
-			} else if (!user.password.equals(password)) {
-				return LoginStatus.WRONG_PASSWORD;
-			} else {
-				user.login();
-				user.setConnectionId(connectionId);
-				connectionsIdMap.put(connectionId, user);
-				return LoginStatus.LOGGED_IN_SUCCESSFULLY;
-			}
-		}
-	}
-
-	private boolean addNewUserCase(int connectionId, String username, String password) {
-		if (!userMap.containsKey(username)) {
-			synchronized (userMap) {
-				if (!userMap.containsKey(username)) {
-					User user = new User(connectionId, username, password);
-					user.login();
-					addUser(user);
-					return true;
-				}
-			}
-		}
-		return false;
-	}
+	
 
 	public void logout(int connectionsId) {
-		User user = connectionsIdMap.get(connectionsId);
-		if (user != null) {
-			// Log logout in SQL
-			String sql = String.format(
-				"UPDATE login_history SET logout_time=datetime('now') " +
-				"WHERE username='%s' AND logout_time IS NULL " +
-				"ORDER BY login_time DESC LIMIT 1",
-				escapeSql(user.name)
-			);
-			executeSQL(sql);
-			
-			user.logout();
-			connectionsIdMap.remove(connectionsId);
-		}
+		String username = activeUsers.remove(connectionsId);
+		if (username == null) return;
+
+		String sql = String.format(
+			"UPDATE login_history SET logout_time=datetime('now') " +
+			"WHERE username='%s' AND logout_time IS NULL " +
+			"ORDER BY login_time DESC LIMIT 1",
+			escapeSql(username)
+		);
+		executeSQL(sql);
 	}
 
 	/**
