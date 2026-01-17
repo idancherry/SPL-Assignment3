@@ -22,7 +22,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    // Thread לקריאת קלט מהמקלדת ושליחה לשרת
     std::thread inputThread([&connectionHandler, &protocol](){
         while (!protocol.shouldTerminate()) {
             std::string line;
