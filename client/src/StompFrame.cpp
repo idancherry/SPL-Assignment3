@@ -3,8 +3,6 @@
 #include <sstream>
 
 
-
-
 StompFrame::StompFrame(std::string command) :
     _command(command),
     _headers(),
@@ -26,7 +24,6 @@ std::string StompFrame::toString() {
     }
     result += "\n"; 
     result += _body;
-    result += "\0"; 
     return result;
 }
   

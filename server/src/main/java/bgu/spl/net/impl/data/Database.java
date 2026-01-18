@@ -166,7 +166,7 @@ public class Database {
 		
 		if (!userExists) {
 			String insertUser = String.format(
-				"INSERT INTO users (username, password, registration_date) VALUES ('%s','%s',datetime('now'))",
+				"INSERT INTO users (username, password, registration_date) VALUES ('%s','%s',datetime('now','localtime'))",
 				escapeSql(username), escapeSql(password)
 			);
 			executeSQL(insertUser);

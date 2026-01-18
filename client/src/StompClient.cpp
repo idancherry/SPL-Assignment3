@@ -29,7 +29,7 @@ int main(int argc, char *argv[]) {
 
             std::string frameToSend = protocol.processKeyboardInput(line);
             if (!frameToSend.empty()) {
-                if (!connectionHandler.sendBytes(frameToSend.c_str(), frameToSend.length())) {
+                if (!connectionHandler.sendBytes(frameToSend.c_str(), frameToSend.length() + 1)) {
                     std::cout << "Disconnected from server." << std::endl;
                     break;
                 }

@@ -12,7 +12,7 @@ import java.nio.channels.SocketChannel;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
-import bgu.spl.net.api.StompMessagingProtocol;
+import bgu.spl.net.impl.stomp.StompProtocolAdapter;
 
 public class Reactor<T> implements Server<T> {
 
@@ -113,10 +113,11 @@ public class Reactor<T> implements Server<T> {
                 connections);
         clientChan.register(selector, SelectionKey.OP_READ, handler);
         connections.addConnection(connectionId, handler);
-        
-        @SuppressWarnings("unchecked")
-        StompMessagingProtocol<T> stompProtocol = (StompMessagingProtocol<T>) protocol;
-        stompProtocol.start(connectionId, connections);
+
+        if (protocol instanceof StompProtocolAdapter) {
+            StompProtocolAdapter adapter =(StompProtocolAdapter) protocol;
+            adapter.start(connectionId, (Connections<String>) connections);
+        }
         
     }
 

@@ -24,7 +24,7 @@ private:
 
     std::mutex _lock;
 
-    void handleConnected(const StompFrame& frame);
+    void handleConnected();
     void handleMessage(const StompFrame& frame);
     void handleReceipt(const StompFrame& frame);
     void handleError(const StompFrame& frame);
@@ -37,7 +37,7 @@ private:
     std::string createSummary(std::stringstream& ss);
 
     void parseEventFromBody(const std::string &body, std::string &reportingUser, Event& outEvent);
-    bool isCommandValid(const std::string& command, std::stringstream& ss);
+    bool isCommandValid(const std::string& command, const std::string& message);
     int safeStoi(const std::string& str);
 
 public:

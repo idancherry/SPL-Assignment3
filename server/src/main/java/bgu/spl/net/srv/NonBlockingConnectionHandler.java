@@ -20,8 +20,6 @@ public class NonBlockingConnectionHandler<T> implements ConnectionHandler<T> {
     private final Queue<ByteBuffer> writeQueue = new ConcurrentLinkedQueue<>();
     private final SocketChannel chan;
     private final Reactor reactor;
-    private final int connectionId;
-    private final Connections<T> connections;
 
     public NonBlockingConnectionHandler(
             MessageEncoderDecoder<T> reader,
@@ -42,8 +40,6 @@ public class NonBlockingConnectionHandler<T> implements ConnectionHandler<T> {
         this.encdec = reader;
         this.protocol = protocol;
         this.reactor = reactor;
-        this.connectionId = connectionId;
-        this.connections = connections;
     }
 
     public Runnable continueRead() {

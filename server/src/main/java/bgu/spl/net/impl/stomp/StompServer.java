@@ -25,9 +25,8 @@ public class StompServer {
             return;
         }
         
-        @SuppressWarnings("unchecked")
         Supplier<MessagingProtocol<String>> protocolFactory =
-        () -> (MessagingProtocol<String>) new StompMessagingProtocolImpl();
+        () -> new StompProtocolAdapter();
 
 
         Supplier<MessageEncoderDecoder<String>> encdecFactory =

@@ -22,7 +22,7 @@ public class StompMessageEncoderDecoder implements MessageEncoderDecoder<String>
 
     @Override
     public byte[] encode(String message) {
-        return (message + "\0").getBytes(StandardCharsets.UTF_8);
+        return (message).getBytes(StandardCharsets.UTF_8);
     }
 
     private void pushByte(byte nextByte) {

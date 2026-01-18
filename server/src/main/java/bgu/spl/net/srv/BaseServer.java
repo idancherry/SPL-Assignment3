@@ -2,7 +2,7 @@ package bgu.spl.net.srv;
 
 import bgu.spl.net.api.MessageEncoderDecoder;
 import bgu.spl.net.api.MessagingProtocol;
-import bgu.spl.net.api.StompMessagingProtocol;
+import bgu.spl.net.impl.stomp.StompProtocolAdapter;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -52,13 +52,18 @@ public abstract class BaseServer<T> implements Server<T> {
                         connections);
 
                 connections.addConnection(connectionId, handler);
-                @SuppressWarnings("unchecked")
-
-                StompMessagingProtocol<T> stompProtocol = (StompMessagingProtocol<T>) protocol;
-                stompProtocol.start(connectionId, connections);
+                
+                // Call start() on StompProtocolAdapter which delegates to impl
+                if (protocol instanceof StompProtocolAdapter) {
+                    StompProtocolAdapter adapter = (StompProtocolAdapter) protocol;
+                    adapter.start(connectionId, (Connections<String>) connections);
+                }
+                
                 execute(handler);
             }
-        } catch (IOException ex) {
+        } catch (Exception ex) {
+            System.err.println("Server error: " + ex.getMessage());
+            ex.printStackTrace();
         }
 
         System.out.println("server closed!!!");

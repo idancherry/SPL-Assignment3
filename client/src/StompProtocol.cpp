@@ -15,6 +15,15 @@ StompProtocol::StompProtocol() :
     _receiptIdCounter(0),
     _disconnectReceiptId(-1) {}
 
+namespace {
+string normalizeTopic(string topic) {
+    if (!topic.empty() && topic[0] == '/') {
+        topic.erase(0, 1);
+    }
+    return topic;
+}
+}
+
 bool StompProtocol::shouldTerminate(){
     return _shouldTerminate;
 }
@@ -26,13 +35,14 @@ string StompProtocol::processKeyboardInput(string message) {
     string command;
     ss >> command;
 
-    std::stringstream ss2(message);
-    std::string cmdCheck;
-    ss2 >> cmdCheck; 
-    if (!isCommandValid(command, ss2)) {
+    if (!isCommandValid(command, message)) {
         return ""; 
     }
 
+    // Create a fresh stringstream for parsing after validation
+    std::stringstream ss2(message);
+    ss2 >> command;  // Skip the command
+    
     if (command == "login")  return createConnectFrame(ss2);
     if (command == "join")   return createSubscribeFrame(ss2);
     if (command == "exit")   return createUnsubscribeFrame(ss2);
@@ -51,7 +61,7 @@ void StompProtocol::processServerResponse(string message) {
     StompFrame frame = StompFrame::parse(message);
     string command = frame.getCommand();
 
-    if (command == "CONNECTED") handleConnected(frame);
+    if (command == "CONNECTED") handleConnected();
     else if (command == "MESSAGE")   handleMessage(frame);
     else if (command == "RECEIPT")   handleReceipt(frame);
     else if (command == "ERROR")     handleError(frame);
@@ -59,7 +69,7 @@ void StompProtocol::processServerResponse(string message) {
 
 // --- Handlers ---
 
-void StompProtocol::handleConnected(const StompFrame& frame) {
+void StompProtocol::handleConnected() {
     _isLoggedIn = true;
     cout << "Login successful" << endl;
 }
@@ -113,7 +123,7 @@ void StompProtocol::handleError(const StompFrame& frame) {
 
 string StompProtocol::createConnectFrame(stringstream& ss) {
     if (_isLoggedIn) {
-        cout << "The client is already logged in, log out before trying again" << endl;
+        cout << "The client is already logged in" << endl;
         return "";
     }
     string hostPort, username, password;
@@ -131,17 +141,19 @@ string StompProtocol::createConnectFrame(stringstream& ss) {
 }
 
 string StompProtocol::createSubscribeFrame(stringstream& ss) {
-    string genre;
-    ss >> genre;
+    string topic;
+    ss >> topic;
+
+    topic = normalizeTopic(topic);
 
     int subId = _subIdCounter++;
-    _subscriptions[subId] = genre; 
+    _subscriptions[subId] = topic; 
 
     int rId = _receiptIdCounter++;
-    _receiptToActions[rId] = "Joined genre " + genre;
+    _receiptToActions[rId] = "Joined channel " + topic;
 
     StompFrame frame("SUBSCRIBE");
-    frame.addHeader("destination", genre);
+    frame.addHeader("destination", "/" + topic);
     frame.addHeader("id", to_string(subId));
     frame.addHeader("receipt", to_string(rId));
 
@@ -149,24 +161,25 @@ string StompProtocol::createSubscribeFrame(stringstream& ss) {
 }
 
 string StompProtocol::createUnsubscribeFrame(stringstream& ss) {
-    string genre;
-    ss >> genre;
+    string topic;
+    ss >> topic;
+    topic = normalizeTopic(topic);
     int subId = -1;
 
     for (auto const& [id, g] : _subscriptions) {
-        if (g == genre) {
+        if (g == topic) {
             subId = id;
             break;
         }
     }
 
     if (subId == -1) {
-        cout << "Error: Not subscribed to " << genre << endl;
+        cout << "Error: Not subscribed to " << topic << endl;
         return "";
     }
 
     int rId = _receiptIdCounter++;
-    _receiptToActions[rId] = "Exited genre " + genre;
+    _receiptToActions[rId] = "Exited channel " + topic;
 
     StompFrame frame("UNSUBSCRIBE");
     frame.addHeader("id", to_string(subId));
@@ -189,8 +202,9 @@ std::string StompProtocol::createSendFrame(std::stringstream& ss) {
         return "";
     }
 
-    std::string game_name = parsedData.team_a_name + "_" + parsedData.team_b_name; 
+    std::string game_name = normalizeTopic(parsedData.team_a_name + "_" + parsedData.team_b_name); 
     std::string allFrames = "";
+    bool firstFrame = true;
 
     for (const Event& e : parsedData.events) { 
         _gameReports[game_name][_currentUserName].push_back(e); 
@@ -223,8 +237,11 @@ std::string StompProtocol::createSendFrame(std::stringstream& ss) {
 
         frame.setBody(body);
 
+        if (!firstFrame) {
+            allFrames.push_back('\0');
+        }
+        firstFrame = false;
         allFrames += frame.toString();
-        allFrames.push_back('\0'); 
     }
     return allFrames;
 }
@@ -352,13 +369,17 @@ std::string StompProtocol::createSummary(std::stringstream& ss) {
     return ""; 
 }
 
-bool StompProtocol::isCommandValid(const std::string& command, std::stringstream& ss) {
+bool StompProtocol::isCommandValid(const std::string& command, const std::string& message) {
     
     if (command != "login" && !_isLoggedIn) {
         std::cout << "Error: You must be logged in to perform this action." << std::endl;
         return false;
     }
 
+    std::stringstream ss(message);
+    std::string cmd;
+    ss >> cmd;  // Skip command
+    
     std::string temp;
     if (command == "login") {
         

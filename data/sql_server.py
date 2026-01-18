@@ -76,7 +76,7 @@ def create_tables():
             username TEXT PRIMARY KEY,
             password TEXT NOT NULL,
             registration_date TEXT NOT NULL
-        """)
+        )""")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS login_history(
@@ -84,7 +84,7 @@ def create_tables():
                 username TEXT,
                 login_time TEXT,
                 logout_time TEXT
-        """)
+        )""")
     
     cur.execute("""
         CREATE TABLE IF NOT EXISTS file_tracking (

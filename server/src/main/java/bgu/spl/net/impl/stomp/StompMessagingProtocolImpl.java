@@ -29,12 +29,12 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     @Override
     public void process(String message) {
         String receiptId = "";
-        String[] parts = message.split("\n");
-        String command = parts[0];
+        String[] parts = message.split("\n", -1);  // Use -1 to keep trailing empty strings
+        String command = parts[0].trim();
         int headerEndIndex = 0;
         boolean headerEndFound = false;
         for (int i=1; i<parts.length; i++){
-            if (parts[i].isEmpty()){
+            if (parts[i].trim().isEmpty()){
                 headerEndIndex = i;
                 headerEndFound = true;
                 break;
@@ -60,8 +60,9 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         }
         
         for (String header : headers) {
-            if (header.startsWith("receipt:")) {
-                receiptId = header.substring("receipt:".length());
+            String trimmedHeader = header.trim();
+            if (trimmedHeader.startsWith("receipt:")) {
+                receiptId = trimmedHeader.substring("receipt:".length());
                 break;
             }
         }
@@ -147,8 +148,8 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     sendError("Invalid CONNECT frame", receiptId, message);
                     return;
                 }
-                String username = headers[idx[2]].substring(6);
-                String passcode = headers[idx[3]].substring(9);
+                String username = headers[idx[2]].substring(6).trim();
+                String passcode = headers[idx[3]].substring(9).trim();
                 LoginStatus loginStatus = db.login(connectionId, username, passcode);
                 switch (loginStatus) {
                     case CLIENT_ALREADY_CONNECTED:
@@ -244,8 +245,8 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     return;
                 }
 
-                if (headers.length != 1) {
-                    sendError("UNSUBSCRIBE frame should have exactly one header", receiptId, message);
+                if (headers.length >2) {
+                    sendError("UNSUBSCRIBE frame contains more than 2 headers", receiptId, message);
                     return;
                 }
 
@@ -337,7 +338,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
 
     private void sendError(String msg, String receiptId, String fullFrame) {
         StringBuilder frame = new StringBuilder();
-
+        System.out.println("Sending ERROR frame: " + msg);
         frame.append("ERROR\n");
         frame.append("message:").append(msg).append("\n");
 
@@ -348,7 +349,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
         frame.append("\n");
 
         if (fullFrame != null && !fullFrame.isEmpty()) {
-            frame.append("The message:\n");
+            frame.append("\nThe message:\n");
             frame.append("-----\n");
             frame.append(fullFrame).append("\n");
             frame.append("-----\n");
