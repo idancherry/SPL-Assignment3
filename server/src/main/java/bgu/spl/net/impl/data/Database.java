@@ -116,6 +116,10 @@ public class Database {
 		return activeUsers.containsKey(connectionId);
 	}
 
+	public String getUsername(int connectionId) {
+		return activeUsers.get(connectionId);
+	}
+
 	public int getNextMessageId() {
 		return nextMessageId.getAndIncrement();
 	}

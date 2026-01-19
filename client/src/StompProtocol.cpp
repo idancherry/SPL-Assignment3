@@ -210,7 +210,10 @@ std::string StompProtocol::createSendFrame(std::stringstream& ss) {
         _gameReports[game_name][_currentUserName].push_back(e); 
 
         StompFrame frame("SEND");
-        frame.addHeader("destination", "/" + game_name); 
+        frame.addHeader("destination", "/" + game_name);
+        if (firstFrame) {
+            frame.addHeader("filename", fileName);
+        }
         
         std::string body = "user: " + _currentUserName + "\n"; 
         body += "team a: " + parsedData.team_a_name + "\n"; 

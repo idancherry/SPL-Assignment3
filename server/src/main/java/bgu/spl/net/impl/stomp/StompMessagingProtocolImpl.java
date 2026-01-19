@@ -281,22 +281,36 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     sendError("User not connected", receiptId, message);
                     return;
                 }
-                if (headers.length != 1) {
-                    sendError("SEND frame should have exactly one header", receiptId, message);
-                    return;
-                }
                 boolean destFound = false;
+                boolean filenameFound = false;
                 String dest = "";
+                String filename = "";
                 for (String header : headers) {
                     if (header.startsWith("destination:")) {
+                        if (destFound) {
+                            sendError("Multiple destination headers", receiptId, message);
+                            return;
+                        }
                         destFound = true;
-                        
-                        if (header.split(":").length < 2) {
+                        if (header.split(":", 2).length < 2) {
                             sendError("Invalid destination header", receiptId, message);
                             return;
                         }
-                        dest = header.split(":")[1];
-                        break;
+                        dest = header.split(":", 2)[1];
+                    } else if (header.startsWith("filename:")) {
+                        if (filenameFound) {
+                            sendError("Multiple filename headers", receiptId, message);
+                            return;
+                        }
+                        filenameFound = true;
+                        if (header.split(":", 2).length < 2) {
+                            sendError("Invalid filename header", receiptId, message);
+                            return;
+                        }
+                        filename = header.split(":", 2)[1];
+                    } else if (!header.trim().isEmpty()) {
+                        sendError("Invalid header in SEND frame", receiptId, message);
+                        return;
                     }
                 }
                 if (!destFound) {
@@ -308,6 +322,13 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                 if (!alreadySubscribed) {
                     sendError("Not subscribed to destination", receiptId, message);
                     return;
+                }
+
+                if (filenameFound) {
+                    String senderUsername = db.getUsername(connectionId);
+                    if (senderUsername != null) {
+                        db.trackFileUpload(senderUsername, filename, dest);
+                    }
                 }
 
                 Set<Integer> subscribers = db.getChannelSubscribers(dest);
