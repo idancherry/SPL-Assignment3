@@ -22,6 +22,8 @@ private:
     std::string _currentUserName;
     int _disconnectReceiptId;   
 
+    bool _isPendingDisconnect = false;
+
     std::mutex _lock;
 
     void handleConnected();
@@ -45,4 +47,7 @@ public:
     std::string processKeyboardInput(std::string input);
     void processServerResponse(std::string frame);
     bool shouldTerminate();
+    bool isPendingDisconnect();
+    std::string getDisconnectFrame();
+    void terminate();
 };

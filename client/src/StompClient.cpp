@@ -25,7 +25,10 @@ int main(int argc, char *argv[]) {
     std::thread inputThread([&connectionHandler, &protocol](){
         while (!protocol.shouldTerminate()) {
             std::string line;
-            if (!std::getline(cin, line)) break;
+            if (!std::getline(cin, line)){
+                break;
+                std::cout << "DEBUG: Keyboard thread read: " << line << std::endl;
+            } 
 
             std::string frameToSend = protocol.processKeyboardInput(line);
             if (!frameToSend.empty()) {
@@ -33,23 +36,49 @@ int main(int argc, char *argv[]) {
                     std::cout << "Disconnected from server." << std::endl;
                     break;
                 }
-            }
+            }else
+                std::cout << "Ddddddddd." << std::endl;
         }
     }); 
         
-    std::thread receiveThread([&connectionHandler, &protocol](){
-        while (!protocol.shouldTerminate()) {
-            std::string answer;
+    // std::thread receiveThread([&connectionHandler, &protocol](){
+    //     while (!protocol.shouldTerminate()) {
+    //         std::string answer;
 
-            if (!connectionHandler.getFrameAscii(answer, '\0')) {
-                if (!protocol.shouldTerminate()) {
-                    std::cout << "Server disconnected unexpectedly." << std::endl;
-                }
-                break;
+    //         if (!connectionHandler.getFrameAscii(answer, '\0')) {
+    //             if (!protocol.shouldTerminate()) {
+    //                 std::cout << "Server disconnected unexpectedly." << std::endl;
+    //             }
+    //             break;
+    //         }
+    //         protocol.processServerResponse(answer);
+    //     }
+    // });
+    std::thread receiveThread([&connectionHandler, &protocol](){
+    while (!protocol.shouldTerminate()) {
+        std::string answer;
+
+        if (!connectionHandler.getFrameAscii(answer, '\0')) {
+            if (!protocol.shouldTerminate()) {
+                protocol.terminate();
+                std::cout << "Server disconnected unexpectedly." << std::endl;
             }
-            protocol.processServerResponse(answer);
+            break;
         }
-    });
+
+        protocol.processServerResponse(answer);
+
+        if (protocol.isPendingDisconnect()) {
+            std::string disconnectFrame = protocol.getDisconnectFrame();
+            
+            if (!connectionHandler.sendBytes(disconnectFrame.c_str(), disconnectFrame.length() + 1)) {
+                std::cout << "Note: Could not send disconnect frame (Socket already closed)." << std::endl;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+});
 
     inputThread.join();
     receiveThread.join();

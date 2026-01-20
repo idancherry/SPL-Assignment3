@@ -19,11 +19,16 @@ void StompFrame::setBody(std::string body) {
     
 std::string StompFrame::toString() {
     std::string result = _command + "\n";
+    
     for (auto const& [key, value] : _headers) {
+        if (key.empty()) continue; 
+        
         result += key + ":" + value + "\n";
     }
+    
     result += "\n"; 
     result += _body;
+    
     return result;
 }
   

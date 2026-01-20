@@ -29,19 +29,18 @@ bool StompProtocol::shouldTerminate(){
 }
 
 string StompProtocol::processKeyboardInput(string message) {
-    std::lock_guard<std::mutex> lock(_lock);
-    
     std::stringstream ss(message);
     string command;
     ss >> command;
-
+    
     if (!isCommandValid(command, message)) {
+        std::cout << "DEBUG: Command validation failed for: " << command << std::endl;
         return ""; 
     }
-
-    // Create a fresh stringstream for parsing after validation
+    
     std::stringstream ss2(message);
-    ss2 >> command;  // Skip the command
+    ss2 >> command;  
+    
     
     if (command == "login")  return createConnectFrame(ss2);
     if (command == "join")   return createSubscribeFrame(ss2);
@@ -56,7 +55,7 @@ string StompProtocol::processKeyboardInput(string message) {
 
 void StompProtocol::processServerResponse(string message) {
 
-    std::lock_guard<std::mutex> lock(_lock);
+   // std::lock_guard<std::mutex> lock(_lock);
 
     StompFrame frame = StompFrame::parse(message);
     string command = frame.getCommand();
@@ -70,6 +69,7 @@ void StompProtocol::processServerResponse(string message) {
 // --- Handlers ---
 
 void StompProtocol::handleConnected() {
+    std::lock_guard<std::mutex> lock(_lock);
     _isLoggedIn = true;
     cout << "Login successful" << endl;
 }
@@ -85,21 +85,29 @@ void StompProtocol::handleMessage(const StompFrame& frame) {
     
     parseEventFromBody(frame.getBody(), reportingUser, event);
 
-    _gameReports[dest][reportingUser].push_back(event);
+    {
+        std::lock_guard<std::mutex> lock(_lock);
+        if (reportingUser != _currentUserName) {
+            _gameReports[dest][reportingUser].push_back(event);
+        }
+      //  _gameReports[dest][reportingUser].push_back(event);
+    }
+ //   _gameReports[dest][reportingUser].push_back(event);
 
     std::cout << "[" << dest << "]: " << frame.getBody() << std::endl;
 }
 
 void StompProtocol::handleReceipt(const StompFrame& frame) {
+    std::lock_guard<std::mutex> lock(_lock);
     std::string receiptIdStr = frame.getHeader("receipt-id");
     int rId = safeStoi(receiptIdStr);
 
     if (_receiptToActions.count(rId) && _receiptToActions[rId] == "DISCONNECT") {
         std::cout << "Logout successful. Closing connection..." << std::endl;
-        
         _isLoggedIn = false;
         _shouldTerminate = true; 
         
+        std::exit(0);
         _receiptToActions.erase(rId);
     } else {
         if (_receiptToActions.count(rId)) {
@@ -109,19 +117,35 @@ void StompProtocol::handleReceipt(const StompFrame& frame) {
     }
 }
 
+// void StompProtocol::handleError(const StompFrame& frame) {
+//     std::string errorMsg = frame.getHeader("message");
+//     std::cout << "\n--- SERVER ERROR RECEIVED ---" << std::endl;
+//     std::cout << "Message: " << errorMsg << std::endl;
+//     if (!frame.getBody().empty()) {
+//         std::cout << "Details: " << frame.getBody() << std::endl;
+//     }
+    
+//     _shouldTerminate = true; 
+//     _isLoggedIn = false;
+// }
 void StompProtocol::handleError(const StompFrame& frame) {
+    std::lock_guard<std::mutex> lock(_lock);
     std::string errorMsg = frame.getHeader("message");
-    std::cout << "\n--- SERVER ERROR RECEIVED ---" << std::endl;
+
+    std::cout << "Message: " << frame.getHeader("message") << std::endl;
+    std::cout << "--- SERVER ERROR RECEIVED ---" << std::endl;
     std::cout << "Message: " << errorMsg << std::endl;
     if (!frame.getBody().empty()) {
-        std::cout << "Details: " << frame.getBody() << std::endl;
+         std::cout << "Details: " << frame.getBody() << std::endl;
     }
-    
-    _shouldTerminate = true; 
-    _isLoggedIn = false;
+
+    _isPendingDisconnect = true; 
 }
 
 string StompProtocol::createConnectFrame(stringstream& ss) {
+
+    std::lock_guard<std::mutex> lock(_lock);
+
     if (_isLoggedIn) {
         cout << "The client is already logged in" << endl;
         return "";
@@ -141,6 +165,9 @@ string StompProtocol::createConnectFrame(stringstream& ss) {
 }
 
 string StompProtocol::createSubscribeFrame(stringstream& ss) {
+
+    std::lock_guard<std::mutex> lock(_lock);
+
     string topic;
     ss >> topic;
 
@@ -161,6 +188,9 @@ string StompProtocol::createSubscribeFrame(stringstream& ss) {
 }
 
 string StompProtocol::createUnsubscribeFrame(stringstream& ss) {
+
+    std::lock_guard<std::mutex> lock(_lock);
+
     string topic;
     ss >> topic;
     topic = normalizeTopic(topic);
@@ -191,6 +221,9 @@ string StompProtocol::createUnsubscribeFrame(stringstream& ss) {
 
 
 std::string StompProtocol::createSendFrame(std::stringstream& ss) {
+
+    std::lock_guard<std::mutex> lock(_lock);
+
     std::string fileName;
     if (!(ss >> fileName)) return ""; 
 
@@ -250,6 +283,9 @@ std::string StompProtocol::createSendFrame(std::stringstream& ss) {
 }
 
 string StompProtocol::createDisconnectFrame(stringstream& ss) {
+
+    std::lock_guard<std::mutex> lock(_lock);
+
     int rId = _receiptIdCounter++;
     _receiptToActions[rId] = "DISCONNECT";
 
@@ -308,59 +344,73 @@ void StompProtocol::parseEventFromBody(const std::string& body, std::string& rep
 
 std::string StompProtocol::createSummary(std::stringstream& ss) {
 
-    std::lock_guard<std::mutex> lock(_lock);
-
     std::string game_name, user, fileName;
-    ss >> game_name >> user >> fileName;
-
-    if (_gameReports.find(game_name) == _gameReports.end() || 
-        _gameReports[game_name].find(user) == _gameReports[game_name].end()) {
-        std::cout << "No reports found for user " << user << " in game " << game_name << std::endl;
+    if (!(ss >> game_name >> user >> fileName)) {
+        std::cout << "Error: Could not parse summary arguments" << std::endl;
         return "";
     }
-    std::vector<Event>& events = _gameReports[game_name][user];
+
+    std::cout << "Attempting to create summary for: " << game_name << " by " << user << std::endl;
+    std::string output = "";
+    {
+        std::lock_guard<std::mutex> lock(_lock);
+
+        if (_gameReports.find(game_name) == _gameReports.end() || 
+            _gameReports[game_name].find(user) == _gameReports[game_name].end()) {
+            std::cout << "No reports found for user " << user << " in game " << game_name << std::endl;
+            return "";
+        }
+        std::vector<Event>& events = _gameReports[game_name][user];
+        
+        struct EventWithOrder {
+            const Event* event;
+            bool isSecondHalf;
+        };
     
-    struct EventWithOrder {
-        const Event* event;
-        bool isSecondHalf;
-    };
+        std::vector<EventWithOrder> orderedEvents;
+        bool foundHalfTime = false;
+    
+        for (const auto& e : events) {
+            orderedEvents.push_back({&e, foundHalfTime});
+            if (e.get_name() == "half time") foundHalfTime = true;
+        }
+    
+        std::stable_sort(orderedEvents.begin(), orderedEvents.end(), [](const EventWithOrder& a, const EventWithOrder& b) {
+            if (a.isSecondHalf != b.isSecondHalf) return !a.isSecondHalf; 
+            return a.event->get_time() < b.event->get_time();
+        });
+    
+        std::map<std::string, std::string> generalStats, teamAStats, teamBStats;
+        std::string teamA = "", teamB = "";
+    
+        for (const auto& eo : orderedEvents) {
+            const Event& e = *(eo.event);
+            if (teamA.empty()) { teamA = e.get_team_a_name(); teamB = e.get_team_b_name(); }
+            for (auto const& [k, v] : e.get_game_updates()) generalStats[k] = v;
+            for (auto const& [k, v] : e.get_team_a_updates()) teamAStats[k] = v;
+            for (auto const& [k, v] : e.get_team_b_updates()) teamBStats[k] = v;
+        }
+    
+        output = teamA + " vs " + teamB + "\n"; 
+        output += "Game stats:\nGeneral stats:\n"; 
+        for (auto const& [k, v] : generalStats) output += k + ": " + v + "\n"; 
+        output += teamA + " stats:\n"; 
+        for (auto const& [k, v] : teamAStats) output += k + ": " + v + "\n"; 
+        output += teamB + " stats:\n"; 
+        for (auto const& [k, v] : teamBStats) output += k + ": " + v + "\n"; 
+    
+        output += "Game event reports:\n"; 
+        for (const auto& eo : orderedEvents) {
+            output += std::to_string(eo.event->get_time()) + " - " + eo.event->get_name() + ":\n"; 
+            output += eo.event->get_discription() + "\n\n"; 
+        }
 
-    std::vector<EventWithOrder> orderedEvents;
-    bool foundHalfTime = false;
-
-    for (const auto& e : events) {
-        orderedEvents.push_back({&e, foundHalfTime});
-        if (e.get_name() == "half time") foundHalfTime = true;
     }
 
-    std::stable_sort(orderedEvents.begin(), orderedEvents.end(), [](const EventWithOrder& a, const EventWithOrder& b) {
-        if (a.isSecondHalf != b.isSecondHalf) return !a.isSecondHalf; 
-        return a.event->get_time() < b.event->get_time();
-    });
 
-    std::map<std::string, std::string> generalStats, teamAStats, teamBStats;
-    std::string teamA = "", teamB = "";
-
-    for (const auto& eo : orderedEvents) {
-        const Event& e = *(eo.event);
-        if (teamA.empty()) { teamA = e.get_team_a_name(); teamB = e.get_team_b_name(); }
-        for (auto const& [k, v] : e.get_game_updates()) generalStats[k] = v;
-        for (auto const& [k, v] : e.get_team_a_updates()) teamAStats[k] = v;
-        for (auto const& [k, v] : e.get_team_b_updates()) teamBStats[k] = v;
-    }
-
-    std::string output = teamA + " vs " + teamB + "\n"; 
-    output += "Game stats:\nGeneral stats:\n"; 
-    for (auto const& [k, v] : generalStats) output += k + ": " + v + "\n"; 
-    output += teamA + " stats:\n"; 
-    for (auto const& [k, v] : teamAStats) output += k + ": " + v + "\n"; 
-    output += teamB + " stats:\n"; 
-    for (auto const& [k, v] : teamBStats) output += k + ": " + v + "\n"; 
-
-    output += "Game event reports:\n"; 
-    for (const auto& eo : orderedEvents) {
-        output += std::to_string(eo.event->get_time()) + " - " + eo.event->get_name() + ":\n"; 
-        output += eo.event->get_discription() + "\n\n"; 
+    if (fileName.empty()) {
+        std::cerr << "Error: No file name provided!" << std::endl;
+        return "";
     }
 
     std::ofstream outFile(fileName);
@@ -368,6 +418,8 @@ std::string StompProtocol::createSummary(std::stringstream& ss) {
         outFile << output;
         outFile.close();
         std::cout << "Summary created in " << fileName << std::endl;
+    } else {
+        std::cerr << "Error: Could not open file for writing: " << fileName << std::endl;
     }
     return ""; 
 }
@@ -381,7 +433,7 @@ bool StompProtocol::isCommandValid(const std::string& command, const std::string
 
     std::stringstream ss(message);
     std::string cmd;
-    ss >> cmd;  // Skip command
+    ss >> cmd;  
     
     std::string temp;
     if (command == "login") {
@@ -415,4 +467,19 @@ int StompProtocol::safeStoi(const std::string& str) {
         std::cerr << "Warning: Invalid number format received: " << str << std::endl;
         return 0;
     }
+}
+
+bool StompProtocol::isPendingDisconnect() {
+    return _isPendingDisconnect;
+}
+
+std::string StompProtocol::getDisconnectFrame() {
+    _isPendingDisconnect = false; 
+    _shouldTerminate = true;      
+    
+    return "DISCONNECT\nreceipt:logout_after_error\n\n\0";
+}
+
+void StompProtocol::terminate(){
+    _shouldTerminate=true;
 }
