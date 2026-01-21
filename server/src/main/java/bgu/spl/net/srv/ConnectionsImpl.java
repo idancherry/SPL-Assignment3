@@ -37,7 +37,11 @@ public class ConnectionsImpl<T> implements Connections<T> {
         ConnectionHandler<T> handler = connections.remove(connectionId);
         if (handler != null) {
             try{
-                handler.close();
+                if (handler instanceof NonBlockingConnectionHandler) {
+                    ((NonBlockingConnectionHandler<T>) handler).markForClose();
+                } else {
+                    handler.close();
+                }
             } catch (Exception e) {
                 e.printStackTrace();
             }

@@ -25,11 +25,18 @@ int main(int argc, char *argv[]) {
     std::thread inputThread([&connectionHandler, &protocol](){
         while (!protocol.shouldTerminate()) {
             std::string line;
-            if (!std::getline(cin, line)) break;
+            if (!std::getline(cin, line)){
+                break;
+            } 
+            if (protocol.shouldTerminate()) {
+                break;
+            }
 
             std::string frameToSend = protocol.processKeyboardInput(line);
             if (!frameToSend.empty()) {
                 if (!connectionHandler.sendBytes(frameToSend.c_str(), frameToSend.length() + 1)) {
+                    protocol.terminate();
+                    connectionHandler.close();
                     std::cout << "Disconnected from server." << std::endl;
                     break;
                 }
@@ -38,18 +45,25 @@ int main(int argc, char *argv[]) {
     }); 
         
     std::thread receiveThread([&connectionHandler, &protocol](){
-        while (!protocol.shouldTerminate()) {
-            std::string answer;
+    while (!protocol.shouldTerminate()) {
+        std::string answer;
 
-            if (!connectionHandler.getFrameAscii(answer, '\0')) {
-                if (!protocol.shouldTerminate()) {
-                    std::cout << "Server disconnected unexpectedly." << std::endl;
-                }
-                break;
+        if (!connectionHandler.getFrameAscii(answer, '\0')) {
+            if (!protocol.shouldTerminate()) {
+                protocol.terminate();
+                std::cout << "Server disconnected unexpectedly." << std::endl;
             }
-            protocol.processServerResponse(answer);
+            connectionHandler.close();
+            break;
         }
-    });
+
+        protocol.processServerResponse(answer);
+        if (protocol.shouldTerminate()) {
+            connectionHandler.close();
+            break;
+        }
+    }
+});
 
     inputThread.join();
     receiveThread.join();

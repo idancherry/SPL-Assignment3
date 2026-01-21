@@ -20,6 +20,7 @@ public class NonBlockingConnectionHandler<T> implements ConnectionHandler<T> {
     private final Queue<ByteBuffer> writeQueue = new ConcurrentLinkedQueue<>();
     private final SocketChannel chan;
     private final Reactor reactor;
+    private volatile boolean closeWhenDone = false;
 
     public NonBlockingConnectionHandler(
             MessageEncoderDecoder<T> reader,
@@ -64,6 +65,10 @@ public class NonBlockingConnectionHandler<T> implements ConnectionHandler<T> {
                                 writeQueue.add(ByteBuffer.wrap(encdec.encode(response)));
                                 reactor.updateInterestedOps(chan, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
                             }
+
+                            if (protocol.shouldTerminate()) {
+                                markForClose();
+                            }
                         }
                     }
                 } finally {
@@ -107,8 +112,11 @@ public class NonBlockingConnectionHandler<T> implements ConnectionHandler<T> {
         }
 
         if (writeQueue.isEmpty()) {
-            if (protocol.shouldTerminate()) close();
-            else reactor.updateInterestedOps(chan, SelectionKey.OP_READ);
+            if (closeWhenDone || protocol.shouldTerminate()) {
+                close();
+            } else {
+                reactor.updateInterestedOps(chan, SelectionKey.OP_READ);
+            }
         }
     }
 
@@ -134,5 +142,10 @@ public class NonBlockingConnectionHandler<T> implements ConnectionHandler<T> {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    public void markForClose() {
+        closeWhenDone = true;
+        reactor.updateInterestedOps(chan, SelectionKey.OP_READ | SelectionKey.OP_WRITE);
     }
 }

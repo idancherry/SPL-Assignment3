@@ -28,6 +28,9 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
 
     @Override
     public void process(String message) {
+        if (shouldTerminate) {
+            return;
+        }
         String receiptId = "";
         String[] parts = message.split("\n", -1);  // Use -1 to keep trailing empty strings
         String command = parts[0].trim();
@@ -230,7 +233,11 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     sendError("Missing id or destination header", receiptId, message);
                     return;
                 }
-
+                boolean isSubscribed = db.isSubscribed(connectionId, destination);
+                if (isSubscribed) {
+                    // Already subscribed to this destination
+                    return;
+                }
                 db.subscribe(connectionId, destination, subscriptionId);
 
                 if (receiptId.length() != 0) {
@@ -358,6 +365,7 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
     }
 
     private void sendError(String msg, String receiptId, String fullFrame) {
+        Database.getInstance().logout(connectionId);
         StringBuilder frame = new StringBuilder();
         System.out.println("Sending ERROR frame: " + msg);
         frame.append("ERROR\n");
@@ -378,7 +386,6 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
 
         frame.append("\u0000");
         connections.send(connectionId, frame.toString());
-        Database.getInstance().logout(connectionId);
         shouldTerminate = true;
         isConnected = false;
         connections.disconnect(connectionId);

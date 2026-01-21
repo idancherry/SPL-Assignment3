@@ -86,11 +86,19 @@ public class Reactor<T> implements Server<T> {
     }
 
     /*package*/ void updateInterestedOps(SocketChannel chan, int ops) {
-        final SelectionKey key = chan.keyFor(selector);
+        if (chan == null) return;
+
         if (Thread.currentThread() == selectorThread) {
+            SelectionKey key = chan.keyFor(selector);
+            if (key == null || !key.isValid()) return;
             key.interestOps(ops);
         } else {
             selectorTasks.add(() -> {
+                if (!chan.isOpen()) return;
+
+                SelectionKey key = chan.keyFor(selector);
+                if (key == null || !key.isValid()) return;
+
                 key.interestOps(ops);
             });
             selector.wakeup();

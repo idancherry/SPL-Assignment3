@@ -4,6 +4,11 @@ LDFLAGS:=-lboost_system -lpthread
 
 all: bin/StompWCIClient
 
+bin/StompWCIClient: | bin
+
+bin:
+	mkdir -p bin
+
 
 bin/StompWCIClient: bin/ConnectionHandler.o bin/StompFrame.o bin/StompProtocol.o bin/StompClient.o bin/event.o
 	g++ -o bin/StompWCIClient bin/ConnectionHandler.o bin/StompFrame.o bin/StompProtocol.o bin/StompClient.o bin/event.o $(LDFLAGS)
@@ -33,4 +38,4 @@ bin/event.o: src/event.cpp
 
 .PHONY: clean
 clean:
-	rm -f bin/*
+	rm -f bin/*.o bin/StompWCIClient bin/EchoClient

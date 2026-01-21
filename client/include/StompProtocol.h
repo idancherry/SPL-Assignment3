@@ -8,12 +8,13 @@
 #include <unordered_map>
 #include <vector>
 #include <mutex>
+#include <atomic>
 
 // TODO: implement the STOMP protocol
 class StompProtocol{
 private:
-    bool _isLoggedIn;
-    bool _shouldTerminate;
+    std::atomic<bool> _isLoggedIn;
+    std::atomic<bool> _shouldTerminate;
     int _subIdCounter;
     int _receiptIdCounter;
     std::unordered_map<int, std::string> _subscriptions;
@@ -21,6 +22,8 @@ private:
     std::map<std::string, std::map<std::string, std::vector<Event>>> _gameReports;
     std::string _currentUserName;
     int _disconnectReceiptId;   
+
+    std::atomic<bool> _isPendingDisconnect;
 
     std::mutex _lock;
 
@@ -45,4 +48,7 @@ public:
     std::string processKeyboardInput(std::string input);
     void processServerResponse(std::string frame);
     bool shouldTerminate();
+    bool isPendingDisconnect();
+    std::string getDisconnectFrame();
+    void terminate();
 };

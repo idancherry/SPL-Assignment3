@@ -4,10 +4,11 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-
 
 public class Database {
 	private final String sqlHost;
@@ -82,15 +83,14 @@ public class Database {
 		if (subscriptions == null) {
 			return;
 		}
-		String channel = subscriptions.get(subscriptionId);
-		if (channel != null) {
-			if (channelSubscribers.containsKey(channel)) {
-				channelSubscribers.get(channel).remove(connectionId);
-			}
-			if (clientSubscriptions.containsKey(connectionId)) {
-				clientSubscriptions.get(connectionId).remove(subscriptionId);
-			}
-			if (channelSubscribers.get(channel).isEmpty()) {
+		String channel = subscriptions.remove(subscriptionId);
+		if (channel == null) {
+			return;
+		}
+		Set<Integer> subs = channelSubscribers.get(channel);
+		if (subs != null) {
+			subs.remove(connectionId);
+			if (subs.isEmpty()) {
 				channelSubscribers.remove(channel);
 			}
 		}
@@ -170,7 +170,7 @@ public class Database {
 		
 		if (!userExists) {
 			String insertUser = String.format(
-				"INSERT INTO users (username, password, registration_date) VALUES ('%s','%s',datetime('now','localtime'))",
+				"INSERT INTO users (username, password, registration_date) VALUES ('%s','%s','" + getTime() + "')",
 				escapeSql(username), escapeSql(password)
 			);
 			executeSQL(insertUser);
@@ -191,8 +191,9 @@ public class Database {
 		}
 
 		String logLogin = String.format(
-			"INSERT INTO login_history (username, login_time) VALUES ('%s', datetime('now'))",
-			escapeSql(username)
+			"INSERT INTO login_history (username, login_time) VALUES ('%s', '%s')",
+    		escapeSql(username),
+    		getTime()
 		);
 		executeSQL(logLogin);
 		activeUsers.put(connectionId, username);
@@ -202,14 +203,20 @@ public class Database {
 			: LoginStatus.ADDED_NEW_USER;
 	}
 
-	
+	private String getTime() {
+    	return ZonedDateTime
+            .now(ZoneId.of("Asia/Jerusalem"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+	}
+
+
 
 	public void logout(int connectionsId) {
 		String username = activeUsers.remove(connectionsId);
 		if (username == null) return;
 
 		String sql = String.format(
-			"UPDATE login_history SET logout_time=datetime('now') " +
+			"UPDATE login_history SET logout_time='" + getTime() + "' "+
 			"WHERE username='%s' AND logout_time IS NULL " +
 			"ORDER BY login_time DESC LIMIT 1",
 			escapeSql(username)
@@ -226,7 +233,7 @@ public class Database {
 	public void trackFileUpload(String username, String filename, String gameChannel) {
 		String sql = String.format(
 			"INSERT INTO file_tracking (username, filename, upload_time, game_channel) " +
-			"VALUES ('%s', '%s', datetime('now'), '%s')",
+			"VALUES ('%s', '%s', '" + getTime() + "', '%s')",
 			escapeSql(username), escapeSql(filename), escapeSql(gameChannel)
 		);
 		executeSQL(sql);
