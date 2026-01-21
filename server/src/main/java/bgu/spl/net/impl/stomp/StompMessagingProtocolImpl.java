@@ -234,12 +234,9 @@ public class StompMessagingProtocolImpl implements StompMessagingProtocol<String
                     return;
                 }
                 boolean isSubscribed = db.isSubscribed(connectionId, destination);
-                if (isSubscribed) {
-                    // Already subscribed to this destination
-                    return;
+                if (!isSubscribed) {
+                    db.subscribe(connectionId, destination, subscriptionId);
                 }
-                db.subscribe(connectionId, destination, subscriptionId);
-
                 if (receiptId.length() != 0) {
                     sendReceipt(receiptId);
                 }
